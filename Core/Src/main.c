@@ -13,7 +13,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "modbus_rtu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
