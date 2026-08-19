@@ -9,6 +9,7 @@ extern "C" {
 
 void Modbus_Init(void);
 void Modbus_Process(void);
+HAL_StatusTypeDef RawSerial_SendInputs(const uint16_t *values, uint16_t numValues);
 
 // Basic Modbus Master functions
 HAL_StatusTypeDef Modbus_ReadHoldingRegisters(uint8_t slaveAddr, uint16_t startAddr, uint16_t numRegs);
