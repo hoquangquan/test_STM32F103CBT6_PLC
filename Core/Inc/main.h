@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define O2_GPIO_Port GPIOA
 #define O3_Pin GPIO_PIN_7
 #define O3_GPIO_Port GPIOA
+#define RS485_DE_Pin GPIO_PIN_8
+#define RS485_DE_GPIO_Port GPIOA
 #define O4_Pin GPIO_PIN_0
 #define O4_GPIO_Port GPIOB
 #define O5_Pin GPIO_PIN_1

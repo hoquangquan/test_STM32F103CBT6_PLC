@@ -13,6 +13,18 @@ static uint32_t lastRxTime = 0;
 volatile uint16_t plc_registers[10] = {0};
 volatile uint8_t modbus_rx_ready = 0;
 
+static HAL_StatusTypeDef RS485_Transmit(uint8_t *data, uint16_t length)
+{
+    HAL_StatusTypeDef status;
+
+    /* SP3485E /RE and DE are tied to PA8: high = transmit, low = receive. */
+    HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_SET);
+    status = HAL_UART_Transmit(&huart1, data, length, MODBUS_TIMEOUT);
+    HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_RESET);
+
+    return status;
+}
+
 static uint16_t Modbus_CRC16(uint8_t *buf, uint16_t len)
 {
     uint16_t crc = 0xFFFF;
@@ -32,6 +44,7 @@ static uint16_t Modbus_CRC16(uint8_t *buf, uint16_t len)
 
 void Modbus_Init(void)
 {
+    HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_RESET);
     // Start listening for incoming bytes
     HAL_UART_Receive_IT(&huart1, &rxData, 1);
 }
@@ -56,28 +69,33 @@ void Modbus_Process(void)
     if (isReceiving && ((HAL_GetTick() - lastRxTime) > 5)) {
         isReceiving = 0; // Frame ended
         
-        if (rxIndex >= 4) {
-            uint16_t crc_calc = Modbus_CRC16(rxBuffer, rxIndex - 2);
-            uint16_t crc_recv = rxBuffer[rxIndex - 2] | (rxBuffer[rxIndex - 1] << 8);
-            
-            if (crc_calc == crc_recv) {
-                // Good frame, check function code
-                if (rxBuffer[1] == 0x03) { // Read Holding Registers response
-                    uint8_t byteCount = rxBuffer[2];
-                    if (rxIndex >= (3 + byteCount + 2)) {
-                        for (int i = 0; i < (byteCount / 2) && i < 10; i++) {
-                            plc_registers[i] = (rxBuffer[3 + i * 2] << 8) | rxBuffer[4 + i * 2];
-                        }
-                        modbus_rx_ready = 1;
-                    }
-                }
-                else if (rxBuffer[1] == 0x06) { // Write Single Register response
-                    modbus_rx_ready = 1;
-                }
+        if (rxIndex == 6) {
+            /* GP.OUTPUT sends K6 bytes. QJ71C24N nonprocedural data is
+             * packed low byte first in each PLC word. */
+            for (uint16_t i = 0; i < 3; i++) {
+                plc_registers[i] = (uint16_t)rxBuffer[i * 2]
+                                 | ((uint16_t)rxBuffer[i * 2 + 1] << 8);
             }
+            modbus_rx_ready = 1;
         }
         rxIndex = 0; // Reset for next frame
     }
+}
+
+HAL_StatusTypeDef RawSerial_SendInputs(const uint16_t *values, uint16_t numValues)
+{
+    /* G.INPUT uses D4673 = K20, therefore every packet is 20 bytes. */
+    uint8_t frame[20] = {0};
+    uint16_t wordsToSend = (numValues > 10U) ? 10U : numValues;
+
+    for (uint16_t i = 0; i < wordsToSend; i++) {
+        frame[i * 2] = (uint8_t)(values[i] & 0xFFU);
+        frame[i * 2 + 1] = (uint8_t)(values[i] >> 8);
+    }
+
+    rxIndex = 0;
+    isReceiving = 0;
+    return RS485_Transmit(frame, sizeof(frame));
 }
 
 HAL_StatusTypeDef Modbus_ReadHoldingRegisters(uint8_t slaveAddr, uint16_t startAddr, uint16_t numRegs)
@@ -98,7 +116,7 @@ HAL_StatusTypeDef Modbus_ReadHoldingRegisters(uint8_t slaveAddr, uint16_t startA
     isReceiving = 0;
     modbus_rx_ready = 0;
     
-    return HAL_UART_Transmit(&huart1, frame, 8, MODBUS_TIMEOUT);
+    return RS485_Transmit(frame, 8);
 }
 
 HAL_StatusTypeDef Modbus_WriteSingleRegister(uint8_t slaveAddr, uint16_t regAddr, uint16_t regValue)
@@ -119,7 +137,7 @@ HAL_StatusTypeDef Modbus_WriteSingleRegister(uint8_t slaveAddr, uint16_t regAddr
     isReceiving = 0;
     modbus_rx_ready = 0;
     
-    return HAL_UART_Transmit(&huart1, frame, 8, MODBUS_TIMEOUT);
+    return RS485_Transmit(frame, 8);
 }
 
 HAL_StatusTypeDef Modbus_WriteMultipleRegisters(uint8_t slaveAddr, uint16_t startAddr, uint16_t numRegs, uint16_t* values)
@@ -149,5 +167,5 @@ HAL_StatusTypeDef Modbus_WriteMultipleRegisters(uint8_t slaveAddr, uint16_t star
     isReceiving = 0;
     modbus_rx_ready = 0;
     
-    return HAL_UART_Transmit(&huart1, frame, frameLen + 2, MODBUS_TIMEOUT);
+    return RS485_Transmit(frame, frameLen + 2);
 }

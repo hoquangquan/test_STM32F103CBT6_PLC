@@ -14,6 +14,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "modbus_rtu.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,9 +101,27 @@ int main(void)
     // Nếu nhận xong (timeout > 5ms), nó sẽ tự động phân tích dữ liệu và cập nhật vào plc_registers
     Modbus_Process();
 
+    // GP.OUTPUT sends 6 raw bytes from D4650-D4652.
+    if (modbus_rx_ready)
+    {
+        virtual_outputs[0] = plc_registers[0];
+        virtual_outputs[1] = plc_registers[1];
+
+        HAL_GPIO_WritePin(O1_GPIO_Port, O1_Pin, (virtual_outputs[0] & (1 << 0)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O2_GPIO_Port, O2_Pin, (virtual_outputs[0] & (1 << 1)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O3_GPIO_Port, O3_Pin, (virtual_outputs[0] & (1 << 2)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O4_GPIO_Port, O4_Pin, (virtual_outputs[0] & (1 << 3)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O5_GPIO_Port, O5_Pin, (virtual_outputs[0] & (1 << 4)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O6_GPIO_Port, O6_Pin, (virtual_outputs[0] & (1 << 5)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O7_GPIO_Port, O7_Pin, (virtual_outputs[0] & (1 << 6)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O8_GPIO_Port, O8_Pin, (virtual_outputs[0] & (1 << 7)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+        modbus_rx_ready = 0;
+    }
+
     // Khối lệnh Test Sequence (Chạy luân phiên mỗi 500ms)
     // Dùng để tạo ra chu kỳ Test: Ép Input ảo -> Đọc Output ảo
-    if (HAL_GetTick() - last_modbus_poll >= 500)
+    if (HAL_GetTick() - last_modbus_poll >= 600)
     {
         last_modbus_poll = HAL_GetTick();
         
@@ -124,17 +143,17 @@ int main(void)
             virtual_inputs[1] = 0x0000; 
             
             // Gửi lệnh Modbus (Mã 0x10) ghi 2 thanh ghi (32 bit) vào địa chỉ D0 của PLC
-            Modbus_WriteMultipleRegisters(current_slave_address, 0x0000, 2, virtual_inputs);
+            RawSerial_SendInputs(virtual_inputs, 2);
             
             // Chuyển sang trạng thái đọc ở chu kỳ 500ms tiếp theo
-            test_state = 1; 
+            test_state = 0;
         }
         else if (test_state == 1)
         {
             // [TRẠNG THÁI 1: ĐỌC KẾT QUẢ OUTPUT TỪ PLC VỀ KIỂM TRA]
             // Gửi lệnh Modbus (Mã 0x03) yêu cầu PLC trả về giá trị của 2 thanh ghi bắt đầu từ D10
             // D10 và D11 trên PLC sẽ do chương trình Ladder ghi trạng thái của 18 tín hiệu Output vào
-            Modbus_ReadHoldingRegisters(current_slave_address, 0x000A, 2);
+            Modbus_ReadHoldingRegisters(current_slave_address, 0x1234, 2);
             
             // Dữ liệu PLC trả về sẽ được Modbus_Process() ngầm xử lý và bật cờ modbus_rx_ready = 1
             if (modbus_rx_ready)
